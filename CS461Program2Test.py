@@ -1,9 +1,13 @@
 #CS461-001 Program 2
-#Contributers - Dylan G, YOUR NAME HERE
+#Contributers - Dylan G, Sheyla R, YOUR NAME HERE
+import sys
 import random
 from dataclasses import dataclass, field
 from typing import Optional
 from numpy.random import PCG64DXSM, Generator
+from collections import defaultdict
+
+sys.stdout.reconfigure(encoding="utf-8")
 
 #Start of part 1 per the docuement
 
@@ -264,6 +268,148 @@ def print_schedule(schedule: Schedule, sort_by: str = "time") -> None:
     print()
     # END OF PRINT TEST DELETE ABOVE AFTER PART 3 ^
 
+
+# Start of Part 2
+
+
+# Map each time slot to an index so we can do distance comparisons easily
+TIME_INDEX: dict[str, int] = {t: i for i, t in enumerate(TIMES)}
+
+
+def score_schedule(schedule: Schedule) -> float:
+    # Scores a single schedule and stores the result in schedule.fitness
+    # Returns the fitness value. Higher is better.
+    total = 0.0
+
+    # Counts how many times each facilitator appears at each time slot, and how many total activities they're assigned across the schedule
+    fac_at_time:  dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    fac_total:    dict[str, int]            = defaultdict(int)
+    room_at_time: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+
+    for a in schedule.assignments:
+        fac_at_time[a.facilitator][a.time] += 1
+        fac_total[a.facilitator]           += 1
+        room_at_time[a.room][a.time]       += 1
+
+    for a in schedule.assignments:
+        cap    = ROOMS[a.room]
+        enroll = a.activity.enrollment
+
+        # Room size scoring
+        if cap < enroll:
+            total -= 0.5
+        elif cap > 3 * enroll:
+            total -= 0.2
+        elif cap > 1.5 * enroll:
+            total -= 0.1
+        else:
+            total += 0.3
+
+        # Two activities booked in the same room at the same time
+        if room_at_time[a.room][a.time] > 1:
+            total -= 0.5
+
+        # Facilitator preference
+        if a.facilitator in a.activity.preferred:
+            total += 0.5
+        elif a.facilitator in a.activity.other:
+            total += 0.2
+        else:
+            total -= 0.1
+
+        # Facilitator scheduled for more than one activity in the same slot
+        if fac_at_time[a.facilitator][a.time] > 1:
+            total -= 0.2
+
+    # Reward or penalize based on how many total activities a facilitator teaches
+    for fac, count in fac_total.items():
+        if count > 4:
+            total -= 0.5
+        elif count in (1, 2):
+            total += 0.2
+
+    # Activity-specific rules for the 101 and 191 sections
+    by_name: dict[str, Assignment] = {a.activity.name: a for a in schedule.assignments}
+
+    sla101a = by_name.get("SLA101A")
+    sla101b = by_name.get("SLA101B")
+    sla191a = by_name.get("SLA191A")
+    sla191b = by_name.get("SLA191B")
+
+    # The two SLA101 sections should be spread out
+    if sla101a and sla101b:
+        diff = abs(TIME_INDEX[sla101a.time] - TIME_INDEX[sla101b.time])
+        if diff == 0:
+            total -= 0.5
+        elif diff >= 4:
+            total += 0.5
+
+    # Same idea for the two SLA191 sections
+    if sla191a and sla191b:
+        diff = abs(TIME_INDEX[sla191a.time] - TIME_INDEX[sla191b.time])
+        if diff == 0:
+            total -= 0.5
+        elif diff >= 4:
+            total += 0.5
+
+    # Reward 101/191 pairs that run back-to-back, penalize if they overlap
+    for s101 in filter(None, [sla101a, sla101b]):
+        for s191 in filter(None, [sla191a, sla191b]):
+            diff = abs(TIME_INDEX[s101.time] - TIME_INDEX[s191.time])
+            if diff == 0:
+                total -= 0.25
+            elif diff == 1:
+                total += 0.5
+
+    schedule.fitness = total
+    return total
+
+
+def score_population(population: list[Schedule]) -> None:
+    # Scores every schedule in the population (mutates in place)
+    for s in population:
+        score_schedule(s)
+
+
+def population_stats(population: list[Schedule]) -> dict:
+    # Returns best, worst, average fitness and references to the best/worst schedules
+    scored = [s for s in population if s.fitness is not None]
+    if not scored:
+        return {}
+    fitnesses   = [s.fitness for s in scored]
+    best_sched  = max(scored, key=lambda s: s.fitness)
+    worst_sched = min(scored, key=lambda s: s.fitness)
+    return {
+        "best":        best_sched.fitness,
+        "worst":       worst_sched.fitness,
+        "average":     sum(fitnesses) / len(fitnesses),
+        "best_sched":  best_sched,
+        "worst_sched": worst_sched,
+        "count":       len(scored),
+    }
+
+
+def print_stats(stats: dict, generation: int = 0, prev_best: float = None) -> None:
+    # Prints a one-line summary for a generation; shows % improvement if prev_best is given
+
+    # NOTE: % improvement will be blank at generation 0 b/c there is nothing to compare to yet. It will start showing once Part 3's evolution loop runs and passes the previous generation's best fitness into prev_best each iteration
+
+    pct_str = ""
+    if prev_best is not None and prev_best != 0:
+        improvement = (stats["best"] - prev_best) / abs(prev_best) * 100
+        pct_str = f"  |  Improvement: {improvement:+.2f}%"
+
+    print(
+        f"  Gen {generation:>4}  |  "
+        f"Best: {stats['best']:>8.4f}  |  "
+        f"Worst: {stats['worst']:>8.4f}  |  "
+        f"Avg: {stats['average']:>8.4f}"
+        + pct_str
+    )
+
+# End of Part 2
+
+
 # 5. MAIN
 
 
@@ -278,10 +424,24 @@ def main() -> None:
     print(f"  Activities per schedule : {len(population[0].assignments)}")
     print(f"  Mutation rate (λ)       : {MUTATION_RATE}")
 
+    # Part 2: score all schedules and show stats
+    score_population(population)
+
     # Print the first schedule sorted two ways for demonstration
     sample = population[0]
     print_schedule(sample, sort_by="time")
     print_schedule(sample, sort_by="activity")
+    stats = population_stats(population)
+    sep = "-" * 72
+    print(f"\n{sep}")
+    print("  Population Statistics  (Generation 0)")
+    print(sep)
+    print_stats(stats, generation=0)
+    print(sep)
+    print("\nBest schedule in initial population:")
+    print_schedule(stats["best_sched"], sort_by="time")
+    print("Worst schedule in initial population:")
+    print_schedule(stats["worst_sched"], sort_by="time")
 
 
 

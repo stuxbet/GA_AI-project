@@ -299,9 +299,9 @@ def score_schedule(schedule: Schedule) -> float:
         if cap < enroll:
             total -= 0.5
         elif cap > 3 * enroll:
-            total -= 0.2
+            total -= 0.4
         elif cap > 1.5 * enroll:
-            total -= 0.1
+            total -= 0.2
         else:
             total += 0.3
 
@@ -317,16 +317,20 @@ def score_schedule(schedule: Schedule) -> float:
         else:
             total -= 0.1
 
-        # Facilitator scheduled for more than one activity in the same slot
-        if fac_at_time[a.facilitator][a.time] > 1:
+        # only 1 activity this slot = good, more than 1 = bad
+        if fac_at_time[a.facilitator][a.time] == 1:
+            total += 0.2
+        elif fac_at_time[a.facilitator][a.time] > 1:
             total -= 0.2
 
     # Reward or penalize based on how many total activities a facilitator teaches
     for fac, count in fac_total.items():
         if count > 4:
             total -= 0.5
-        elif count in (1, 2):
-            total += 0.2
+        elif count < 3:
+            # Tyler gets an exception since hes got other stuff going on
+            if not (fac == "Tyler" and count < 2):
+                total -= 0.4
 
     # Activity-specific rules for the 101 and 191 sections
     by_name: dict[str, Assignment] = {a.activity.name: a for a in schedule.assignments}
@@ -352,6 +356,8 @@ def score_schedule(schedule: Schedule) -> float:
         elif diff >= 4:
             total += 0.5
 
+    ROMAN_BEACH = {"Roman 201", "Roman 216", "Beach 201", "Beach 301"}
+
     # Reward 101/191 pairs that run back-to-back, penalize if they overlap
     for s101 in filter(None, [sla101a, sla101b]):
         for s191 in filter(None, [sla191a, sla191b]):
@@ -360,6 +366,25 @@ def score_schedule(schedule: Schedule) -> float:
                 total -= 0.25
             elif diff == 1:
                 total += 0.5
+                # dont want them running across campus between back to back classes
+                if (s101.room in ROMAN_BEACH) != (s191.room in ROMAN_BEACH):
+                    total -= 0.4
+            elif diff == 2:
+                total += 0.25
+
+    # if a facilitator has back to back classes check if theyd have to run between buildings
+    fac_rooms: dict[str, dict[str, str]] = defaultdict(dict)
+    for a in schedule.assignments:
+        fac_rooms[a.facilitator][a.time] = a.room
+
+    for fac in fac_rooms:
+        slots = sorted(fac_rooms[fac].keys(), key=lambda t: TIME_INDEX[t])
+        for i in range(len(slots) - 1):
+            if TIME_INDEX[slots[i + 1]] - TIME_INDEX[slots[i]] == 1:
+                room_a = fac_rooms[fac][slots[i]]
+                room_b = fac_rooms[fac][slots[i + 1]]
+                if (room_a in ROMAN_BEACH) != (room_b in ROMAN_BEACH):
+                    total -= 0.4
 
     schedule.fitness = total
     return total

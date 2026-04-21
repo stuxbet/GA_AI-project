@@ -1,20 +1,20 @@
-Best schedule — fitness = 12.6000
+Best schedule — fitness = 13.0000
 
 Activity    Time    Room          Facilitator   Enroll   Cap
 ------------------------------------------------------------
-SLA191B     10 AM   Loft 310      Glen              40    48
-SLA451      10 AM   James 325     Lock              90   110
+SLA191B     10 AM   Loft 206      Glen              40    55
+SLA451      10 AM   Frank 119     Lock              90    95
 
-SLA101B     11 AM   Loft 310      Glen              35    48
+SLA101A     11 AM   Loft 310      Glen              40    48
 
-SLA291      12 PM   Loft 206      Glen              50    55
-SLA303      12 PM   Beach 301     Zeldin            25    25
-SLA394      12 PM   Beach 201     Tyler             15    18
+SLA201      12 PM   Roman 216     Singer            60    80
 
+SLA303      1 PM    Slater 003    Glen              25    32
 SLA304      1 PM    Beach 301     Singer            20    25
 
-SLA191A     2 PM    Loft 310      Lock              45    48
-SLA201      2 PM    Roman 216     Zeldin            60    80
+SLA191A     2 PM    Loft 206      Lock              45    55
+SLA449      2 PM    Roman 201     Tyler             30    40
 
-SLA101A     3 PM    Loft 310      Lock              40    48
-SLA449      3 PM    Roman 201     Zeldin            30    40
+SLA101B     3 PM    Loft 310      Glen              35    48
+SLA291      3 PM    Loft 206      Lock              50    55
+SLA394      3 PM    Beach 201     Singer            15    18

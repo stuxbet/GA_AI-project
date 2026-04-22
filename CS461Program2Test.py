@@ -290,6 +290,8 @@ def print_schedule(schedule: Schedule, sort_by: str = "time") -> None:
 # Map each time slot to an index so we can do distance comparisons easily
 TIME_INDEX: dict[str, int] = {t: i for i, t in enumerate(TIMES)}
 
+ROMAN_BEACH_SCALAR = {"Roman 201", "Roman 216", "Beach 201", "Beach 301"}
+
 
 def score_schedule(schedule: Schedule) -> float:
     # Scores a single schedule and stores the result in schedule.fitness
@@ -371,8 +373,6 @@ def score_schedule(schedule: Schedule) -> float:
         elif diff >= 4:
             total += 0.5
 
-    ROMAN_BEACH = {"Roman 201", "Roman 216", "Beach 201", "Beach 301"}
-
     # Reward 101/191 pairs that run back-to-back, penalize if they overlap
     for s101 in filter(None, [sla101a, sla101b]):
         for s191 in filter(None, [sla191a, sla191b]):
@@ -382,13 +382,15 @@ def score_schedule(schedule: Schedule) -> float:
             elif diff == 1:
                 total += 0.5
                 # Penalize if one is in Roman/Beach and the other is not (widely separated buildings)
-                if (s101.room in ROMAN_BEACH) != (s191.room in ROMAN_BEACH):
+                if (s101.room in ROMAN_BEACH_SCALAR) != (s191.room in ROMAN_BEACH_SCALAR):
                     total -= 0.4
             elif diff == 2:
                 total += 0.25
 
-    # Penalize facilitators with consecutive time slots if their rooms are in different buildings
-    # (Roman/Beach vs everything else) — same rule as 101/191 consecutive building mismatch
+    # FIX: Facilitator consecutive time slots — apply SAME rules as SLA 101/191:
+    #   +0.5 for being in consecutive slots (reward proximity)
+    #   -0.4 if one room is Roman/Beach and the other is not (building mismatch penalty)
+    # Previously only the -0.4 mismatch was applied; the +0.5 reward was missing.
     fac_rooms: dict[str, dict[str, str]] = defaultdict(dict)
     for a in schedule.assignments:
         fac_rooms[a.facilitator][a.time] = a.room
@@ -397,9 +399,10 @@ def score_schedule(schedule: Schedule) -> float:
         slots = sorted(fac_rooms[fac].keys(), key=lambda t: TIME_INDEX[t])
         for i in range(len(slots) - 1):
             if TIME_INDEX[slots[i + 1]] - TIME_INDEX[slots[i]] == 1:
+                total += 0.5  # reward for facilitator in consecutive slots
                 room_a = fac_rooms[fac][slots[i]]
                 room_b = fac_rooms[fac][slots[i + 1]]
-                if (room_a in ROMAN_BEACH) != (room_b in ROMAN_BEACH):
+                if (room_a in ROMAN_BEACH_SCALAR) != (room_b in ROMAN_BEACH_SCALAR):
                     total -= 0.4
 
     schedule.fitness = total
@@ -592,8 +595,11 @@ def score_batch(pop: np.ndarray, return_breakdown: bool = False):
         mismatch = consec & (rb_a != rb_b)
         sla_cross_total += np.where(mismatch, -0.4, 0.0)
 
-    # Facilitator consecutive slots with building mismatch (-0.4 per occurrence).
-    # Mirrors score_schedule quirk: last activity in activity-order wins the (time, fac) slot.
+    # FIX: Facilitator consecutive slots — apply SAME rules as SLA 101/191:
+    #   +0.5 reward for being in consecutive slots
+    #   -0.4 if building mismatch (Roman/Beach vs other)
+    # Previously only the -0.4 mismatch was applied; the +0.5 reward was missing.
+    # Note: last activity in activity-order wins the (time, fac) slot for room lookup.
     fac_room_at_time = np.full((M, N_TIMES, N_FACS), -1, dtype=np.int64)
     row_idx = np.arange(M)
     for act_i in range(N_ACTS):
@@ -602,6 +608,9 @@ def score_batch(pop: np.ndarray, return_breakdown: bool = False):
     fac_consec_total = np.zeros(M, dtype=np.float64)
     for t_slot in range(N_TIMES - 1):
         both = occupied[:, t_slot, :] & occupied[:, t_slot + 1, :]
+        # +0.5 reward for each facilitator with consecutive slots
+        fac_consec_total += 0.5 * both.sum(axis=1)
+        # -0.4 penalty for building mismatch in those consecutive slots
         r_a = np.where(both, fac_room_at_time[:, t_slot,     :], 0)
         r_b = np.where(both, fac_room_at_time[:, t_slot + 1, :], 0)
         rb_a = ROMAN_BEACH_ROOMS[r_a]
@@ -835,7 +844,7 @@ class Visualizer:
         slot_counts = np.bincount(best_row[:, 1], minlength=N_ROOMS)
         ax.bar(ROOM_NAMES, slot_counts, color="#1f77b4")
         ax.set_title("Room utilization (best)"); ax.set_ylabel("activities scheduled")
-        ax.tick_params(axis="x", rotation=30)
+        ax.tick_params(axis="x", rotation=45)
 
         # (1,2) time x room heatmap — visualizes same-time-same-room collisions
         ax = axes[1, 2]; ax.clear()
